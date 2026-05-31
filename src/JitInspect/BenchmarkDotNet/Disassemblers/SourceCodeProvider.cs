@@ -75,7 +75,7 @@ internal class SourceCodeProvider : IDisposable
             sourceFileCache.Add(file, contents);
         }
 
-        return line - 1 < contents.Length
+        return 0 <= line - 1 && line - 1 < contents.Length
             ? contents[line - 1]
             : null; // "nop" can have no corresponding c# code ;)
     }
