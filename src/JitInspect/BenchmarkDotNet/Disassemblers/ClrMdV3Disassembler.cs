@@ -46,13 +46,9 @@ internal abstract class ClrMdV3Disassembler
 
     internal DisassemblyResult AttachAndDisassemble(Settings settings)
     {
-        using (var dataTarget = DataTarget.AttachToProcess(
-                   settings.ProcessId,
-                   false))
+        using (var dataTarget = ClrMdDataTargetOptions.AttachToProcess(settings.ProcessId))
         {
             var runtime = dataTarget.ClrVersions.Single().CreateRuntime();
-
-            ConfigureSymbols(dataTarget);
 
             var state = new State(runtime, settings.TargetFrameworkMoniker);
 
@@ -85,12 +81,6 @@ internal abstract class ClrMdV3Disassembler
                 PointerSize = (uint)IntPtr.Size
             };
         }
-    }
-
-    static void ConfigureSymbols(DataTarget dataTarget)
-    {
-        // code copied from https://github.com/Microsoft/clrmd/issues/34#issuecomment-161926535
-        dataTarget.SetSymbolPath("http://msdl.microsoft.com/download/symbols");
     }
 
     static void FilterAndEnqueue(State state, Settings settings)

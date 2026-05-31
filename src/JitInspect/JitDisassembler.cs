@@ -51,7 +51,11 @@ public sealed class JitDisassembler : IDisposable
 
     public static DataTarget CreateDataTarget(Process? process = null)
     {
-        return DataTarget.AttachToProcess((process ?? Process.GetCurrentProcess()).Id, false);
+        if (process is not null)
+            return ClrMdDataTargetOptions.AttachToProcess(process.Id);
+
+        using var currentProcess = Process.GetCurrentProcess();
+        return ClrMdDataTargetOptions.AttachToProcess(currentProcess.Id);
     }
 
 
@@ -124,7 +128,6 @@ public sealed class JitDisassembler : IDisposable
             runtime.FlushCachedData();
         }
 
-        ConfigureSymbols(runtime.DataTarget);
         if (method.IsVirtual && !method.DeclaringType!.IsClass)
             clrMethod = runtime.GetMethodByInstructionPointer((ulong)FunctionPointerHelper.GetMethodPointer((System.Reflection.MethodInfo)method));
         else
@@ -325,13 +328,6 @@ public sealed class JitDisassembler : IDisposable
             }
         }
         writer.WriteLine(")");
-    }
-
-
-    static void ConfigureSymbols(DataTarget dataTarget)
-    {
-        // code copied from https://github.com/Microsoft/clrmd/issues/34#issuecomment-161926535
-        dataTarget.SetSymbolPath("http://msdl.microsoft.com/download/symbols");
     }
 
     public void Dispose()
