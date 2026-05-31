@@ -1,5 +1,4 @@
 ﻿using System.Buffers;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -18,19 +17,18 @@ namespace JitInspect;
 public sealed class JitDisassembler : IDisposable
 {
     static readonly DisassembleOptions defaultOptions = new();
-    internal ConcurrentBag<IDisposable> Disposables { get; } = new();
-    readonly ClrRuntime runtime;
+    DataTarget dataTarget = null!;
+    ClrRuntime runtime = null!;
     readonly ClrMdV3Disassembler disassembler;
     readonly int processId;
+    readonly bool useSnapshotDataTarget;
 
     internal JitDisassembler(Process? process)
     {
-        var dt = CreateDataTarget(process);
-        processId = dt.DataReader.ProcessId;
-        var info = dt.ClrVersions[0];
-        runtime = info.CreateRuntime();
-        Disposables.Add(dt);
-        Disposables.Add(runtime);
+        using var currentProcess = Process.GetCurrentProcess();
+        processId = process?.Id ?? currentProcess.Id;
+        useSnapshotDataTarget = processId == currentProcess.Id;
+        AttachRuntime();
         disassembler = CreateDisassemblerForCurrentArchitecture();
     }
 
@@ -56,6 +54,28 @@ public sealed class JitDisassembler : IDisposable
 
         using var currentProcess = Process.GetCurrentProcess();
         return ClrMdDataTargetOptions.AttachToProcess(currentProcess.Id);
+    }
+
+    void AttachRuntime()
+    {
+        dataTarget = ClrMdDataTargetOptions.AttachToProcess(processId);
+        runtime = dataTarget.ClrVersions[0].CreateRuntime();
+    }
+
+    void RefreshRuntimeAfterJitIfNeeded()
+    {
+        if (useSnapshotDataTarget)
+        {
+            runtime.Dispose();
+            dataTarget.Dispose();
+            AttachRuntime();
+            return;
+        }
+
+        lock (runtime)
+        {
+            runtime.FlushCachedData();
+        }
     }
 
 
@@ -123,10 +143,7 @@ public sealed class JitDisassembler : IDisposable
         handle.GetFunctionPointer();
         RuntimeHelpers.PrepareMethod(handle);
         ClrMethod? clrMethod;
-        lock (runtime)
-        {
-            runtime.FlushCachedData();
-        }
+        RefreshRuntimeAfterJitIfNeeded();
 
         if (method.IsVirtual && !method.DeclaringType!.IsClass)
             clrMethod = runtime.GetMethodByInstructionPointer((ulong)FunctionPointerHelper.GetMethodPointer((System.Reflection.MethodInfo)method));
@@ -332,8 +349,7 @@ public sealed class JitDisassembler : IDisposable
 
     public void Dispose()
     {
-        foreach (var disposable in Disposables)
-            disposable.Dispose();
-        Disposables.Clear();
+        runtime.Dispose();
+        dataTarget.Dispose();
     }
 }
